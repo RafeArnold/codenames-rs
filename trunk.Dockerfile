@@ -1,2 +1,3 @@
-FROM rust:1-slim
-RUN cargo install --locked trunk
+FROM rust:slim
+RUN rustup target add wasm32-unknown-unknown\
+    && cargo install --locked trunk
