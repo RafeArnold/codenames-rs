@@ -1,7 +1,7 @@
 use crate::game::{Game, Result};
 use crate::game_service::GameService;
 use common::api::v1::models::{
-    ClientMessage, EventRequest, GameView, Group, Player, ServerMessage, Tile, Clue, Guess,
+    ClientMessage, Clue, EventRequest, GameView, Group, Guess, Player, ServerMessage, Tile,
 };
 use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt};
@@ -13,19 +13,43 @@ use warp::{Filter, Reply};
 
 use super::{game_id_query_param, player_id_cookie};
 
-pub fn route(game_service: Arc<GameService>) -> BoxedFilter<(impl Reply,)> {
-    Filter::boxed(
-        warp::path!("events")
-            .and(warp::ws())
-            .and(player_id_cookie())
-            .and(game_id_query_param())
-            .map(move |ws, player_id, game_id| {
-                handle_ws_request(game_service.clone(), ws, player_id, game_id)
-            }),
-    )
+pub struct EventsRouter {
+    connections: Connections,
+    game_service: Arc<GameService>,
+}
+
+impl EventsRouter {
+    pub fn new(game_service: Arc<GameService>) -> Self {
+        let connections = Default::default();
+        Self {
+            connections,
+            game_service,
+        }
+    }
+
+    pub fn route(&self) -> BoxedFilter<(impl Reply,)> {
+        let connections = self.connections.clone();
+        let game_service = self.game_service.clone();
+        Filter::boxed(
+            warp::path!("events")
+                .and(warp::ws())
+                .and(player_id_cookie())
+                .and(game_id_query_param())
+                .map(move |ws, player_id, game_id| {
+                    handle_ws_request(
+                        connections.clone(),
+                        game_service.clone(),
+                        ws,
+                        player_id,
+                        game_id,
+                    )
+                }),
+        )
+    }
 }
 
 fn handle_ws_request(
+    connections: Connections,
     game_service: Arc<GameService>,
     ws: warp::ws::Ws,
     player_id: String,
@@ -34,7 +58,8 @@ fn handle_ws_request(
     let player_id: String = player_id.clone();
     let game_id: String = game_id.clone();
     ws.on_upgrade(move |socket| {
-        EventsHandler::new(game_service).handle_socket(socket, player_id, game_id)
+        EventsHandler::new(game_service.clone(), connections)
+            .handle_socket(socket, player_id, game_id)
     })
 }
 
@@ -44,9 +69,9 @@ struct EventsHandler {
 }
 
 impl EventsHandler {
-    pub fn new(game_service: Arc<GameService>) -> Self {
+    pub fn new(game_service: Arc<GameService>, connections: Connections) -> Self {
         Self {
-            connections: Default::default(),
+            connections,
             game_service,
         }
     }
@@ -59,7 +84,8 @@ impl EventsHandler {
             connections.insert(game_id.clone(), Default::default());
         }
         let game_connections = connections.get_mut(game_id.as_str()).unwrap();
-        game_connections.insert(player_id.clone(), sink);
+        let connection_id = uuid::Uuid::new_v4().simple().to_string();
+        game_connections.insert(connection_id.clone(), (player_id.clone(), sink));
         drop(connections);
 
         // Send current game view upon connection.
@@ -79,7 +105,13 @@ impl EventsHandler {
             }
         }
 
-        self.connections.lock().await.remove(game_id.as_str());
+        let mut connections = self.connections.lock().await;
+        let game_connections = connections.get_mut(game_id.as_str()).unwrap();
+        game_connections.remove(connection_id.as_str());
+        if game_connections.is_empty() {
+            // No more users are connected to this game, so drop this game's connections entry.
+            connections.remove(game_id.as_str());
+        }
     }
 
     async fn handle_message(&self, message: warp::ws::Message, game_id: &str, player_id: &str) {
@@ -149,7 +181,7 @@ impl EventsHandler {
     async fn send_state_update(&self, game_id: &str, game: Game) {
         match self.connections.lock().await.get_mut(game_id) {
             Some(conns) => {
-                for (player_id, sink) in conns {
+                for (_connection_id, (player_id, sink)) in conns {
                     let is_spymaster = game.teams.red.spy_masters.contains_key(player_id)
                         || game.teams.blue.spy_masters.contains_key(player_id);
                     let json = if is_spymaster {
@@ -226,4 +258,4 @@ impl FromGame for GameView {
 
 type Connections = Arc<Mutex<HashMap<String, GameConnections>>>;
 
-type GameConnections = HashMap<String, SplitSink<warp::ws::WebSocket, warp::ws::Message>>;
+type GameConnections = HashMap<String, (String, SplitSink<warp::ws::WebSocket, warp::ws::Message>)>;

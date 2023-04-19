@@ -6,6 +6,8 @@ use warp::filters::BoxedFilter;
 use warp::reply::Response;
 use warp::{Filter, Rejection, Reply};
 
+use self::events_handler::EventsRouter;
+
 pub mod events_handler;
 pub mod join_game_handler;
 pub mod new_game_handler;
@@ -17,7 +19,7 @@ pub fn routes(game_service: Arc<GameService>) -> BoxedFilter<(impl Reply,)> {
             new_game_handler::route(game_service.clone())
                 .or(join_game_handler::route(game_service.clone()))
                 .or(player_joined_handler::route(game_service.clone()))
-                .or(events_handler::route(game_service.clone()))
+                .or(EventsRouter::new(game_service.clone()).route())
                 .recover(handle_missing_query_param_rejection)
                 .boxed()
                 .with(warp::wrap_fn(player_id_cookie_wrap)),
