@@ -22,6 +22,7 @@ impl GameService {
 
     pub async fn new_game(&self, player_id: String) -> String {
         let mut rng = rand::rngs::OsRng::default();
+        // TODO: add nicer game id generator.
         let game_id = uuid::Uuid::new_v4().simple().to_string();
         let first_turn = rng.gen();
         let game = Game::new(
