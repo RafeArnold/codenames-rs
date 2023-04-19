@@ -191,7 +191,8 @@ impl Game {
                                                                 {tile.word.clone() + " " + colour.to_string().as_str()}
                                                             } else {
                                                                 {&tile.word}
-                                                                if view.next_action == Action::Guess &&
+                                                                if tile.colour.is_none() &&
+                                                                    view.next_action == Action::Guess &&
                                                                     match view.team_turn {
                                                                         TeamColour::Red => view.this_player.group == Group::RedGuessers,
                                                                         TeamColour::Blue => view.this_player.group == Group::BlueGuessers,

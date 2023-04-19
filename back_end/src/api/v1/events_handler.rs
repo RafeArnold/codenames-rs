@@ -1,7 +1,8 @@
 use crate::game::{Game, Result};
 use crate::game_service::GameService;
 use common::api::v1::models::{
-    ClientMessage, Clue, EventRequest, GameView, Group, Guess, Player, ServerMessage, Tile,
+    ClientMessage, Clue, EventRequest, GameEvent, GameView, Group, Guess, Player, ServerMessage,
+    Tile,
 };
 use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt};
@@ -224,13 +225,27 @@ trait FromGame {
 
 impl FromGame for GameView {
     fn from_game(game: Game, is_spymaster: bool, player_id: &str) -> Self {
-        let tiles = game.tiles.map(|tile| Tile {
-            word: tile.word,
-            colour: if is_spymaster {
-                Some(tile.colour)
-            } else {
-                None
-            },
+        // Collect the indexes of every tile that has already been guessed.
+        let guessed_tile_indexes: Vec<u8> = game
+            .history
+            .iter()
+            .filter_map(|event| match event {
+                GameEvent::Clue(_) => None,
+                GameEvent::Guess(guess) => Some(guess.tile_index),
+            })
+            .collect();
+        let mut tile_index: u8 = 0;
+        let tiles = game.tiles.map(|tile| {
+            let tile = Tile {
+                word: tile.word,
+                colour: if is_spymaster || guessed_tile_indexes.contains(&tile_index) {
+                    Some(tile.colour)
+                } else {
+                    None
+                },
+            };
+            tile_index += 1;
+            tile
         });
 
         let this_player = game

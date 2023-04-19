@@ -76,6 +76,15 @@ pub enum TeamColour {
     Blue,
 }
 
+impl TeamColour {
+    pub fn other(&self) -> TeamColour {
+        match self {
+            TeamColour::Red => TeamColour::Blue,
+            TeamColour::Blue => TeamColour::Red,
+        }
+    }
+}
+
 impl rand::distributions::Distribution<TeamColour> for rand::distributions::Standard {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> TeamColour {
         if rng.gen() {

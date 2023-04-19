@@ -1,5 +1,5 @@
 use common::api::v1::models::{
-    Action, GameEvent, Group, Player, Team, TeamColour, Teams, TileColour, Clue, Guess,
+    Action, Clue, GameEvent, Group, Guess, Player, Team, TeamColour, Teams, TileColour,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -92,8 +92,12 @@ impl Game {
         self.validate_game_has_started()?;
         self.validate_action(Action::Guess)?;
         self.validate_player(player_id)?;
+        self.validate_tile_index(guess.tile_index)?;
         self.history.push(GameEvent::Guess(guess));
-        self.next_action = Action::Clue;
+        if !self.can_guess_more() {
+            self.next_action = Action::Clue;
+            self.team_turn = self.team_turn.other();
+        }
         Ok(())
     }
 
@@ -181,6 +185,14 @@ impl Game {
         }
     }
 
+    fn validate_tile_index(&self, tile_index: u8) -> Result<()> {
+        if tile_index < 25 {
+            Ok(())
+        } else {
+            Err(CodeNamesError::TileIndexOutOfBoundsError { tile_index })
+        }
+    }
+
     fn get_player_group(&mut self, player_id: &str) -> Result<&mut HashMap<String, Player>> {
         fn contains_player<'a>(
             players: &'a mut HashMap<String, Player>,
@@ -198,6 +210,57 @@ impl Game {
             .or_else(|| contains_player(&mut self.teams.red.guessers, player_id))
             .or_else(|| contains_player(&mut self.teams.red.spy_masters, player_id))
             .ok_or(CodeNamesError::NoSuchPlayerError)
+    }
+
+    fn can_guess_more(&self) -> bool {
+        // Get the last clue provided. This is the clue that the player is guessing for.
+        let mut current_clue: Option<&Clue> = None;
+        // Get the amount of guesses that have already been made for the current clue.
+        let mut guess_count = 0;
+        for event in self.history.iter().rev() {
+            match event {
+                GameEvent::Clue(clue) => {
+                    current_clue = Some(clue);
+                    break;
+                }
+                GameEvent::Guess(guess) => {
+                    if guess_count == 0 {
+                        // ^ Only need to do this check for the last guess made, since the others have already been checked previously.
+                        // Check the last guess was correct. Otherwise return false.
+                        match self.get_tile_colour(guess.tile_index) {
+                            TileColour::Red => {
+                                if self.team_turn != TeamColour::Red {
+                                    return false;
+                                }
+                            }
+                            TileColour::Blue => {
+                                if self.team_turn != TeamColour::Blue {
+                                    return false;
+                                }
+                            }
+                            TileColour::Grey => return false,
+                            TileColour::Black => todo!("Implement game over"),
+                        }
+                    }
+                    guess_count += 1;
+                }
+            }
+        }
+        let current_clue =
+            current_clue.expect("Cannot be guessing at all if no clues have been provided");
+        if current_clue.count < guess_count {
+            // The maximum amount of guesses have been made.
+            return false;
+        }
+        true
+    }
+
+    fn get_tile_colour(&self, tile_index: u8) -> &TileColour {
+        &self
+            .tiles
+            .get(tile_index as usize)
+            .expect("Invalid tile index should have been caught earlier")
+            .colour
     }
 }
 
@@ -218,6 +281,7 @@ pub enum CodeNamesError {
     NotEnoughPlayersError,
     NotHostError,
     PlayerAlreadyInGameError,
+    TileIndexOutOfBoundsError { tile_index: u8 },
 }
 
 impl Display for CodeNamesError {
@@ -253,6 +317,9 @@ impl Display for CodeNamesError {
                 write!(f, "Player must be the host to perform this action")
             }
             CodeNamesError::PlayerAlreadyInGameError => write!(f, "Player is already in this game"),
+            CodeNamesError::TileIndexOutOfBoundsError { tile_index } => {
+                write!(f, "Invalid tile index: {}", tile_index)
+            }
         }
     }
 }
