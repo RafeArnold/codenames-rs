@@ -88,8 +88,18 @@ where
                     warp::http::header::SET_COOKIE,
                     warp::http::HeaderValue::from_str(
                         format!(
-                            "{}={}; HttpOnly; SameSite=Strict; Secure",
-                            PLAYER_ID_COOKIE_NAME, player_id
+                            "{}={}; HttpOnly; SameSite=Strict{}",
+                            PLAYER_ID_COOKIE_NAME,
+                            player_id,
+                            if std::env::var("INSECURE")
+                                .ok()
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(false)
+                            {
+                                ""
+                            } else {
+                                "; Secure"
+                            }
                         )
                         .as_str(),
                     )
