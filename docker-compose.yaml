@@ -9,6 +9,11 @@ services:
     environment:
       REPO_URL: redis://redis:6379
       INSECURE: "true"
+      FRONT_END_DIR: /app/dist
+    volumes:
+      - type: bind
+        source: ./front_end/dist
+        target: /app/dist
     depends_on:
       - redis
   redis:
