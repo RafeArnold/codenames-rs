@@ -102,9 +102,7 @@ impl Game {
     }
 
     fn validate_team<'b>(&self, team: &Team) -> Result<()> {
-        if team.spy_masters.len() != 1 {
-            Err(CodeNamesError::NotEnoughPlayersError)
-        } else if team.guessers.len() == 0 {
+        if team.spy_masters.len() == 0 || team.guessers.len() == 0 {
             Err(CodeNamesError::NotEnoughPlayersError)
         } else {
             Ok(())
