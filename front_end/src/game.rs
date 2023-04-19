@@ -79,11 +79,17 @@ impl Game {
 
         let clue_input = self.clue_input.clone();
         let provide_clue = ctx.link().batch_callback(move |_| {
-            clue_input.count.map(|count| {
-                GameMsg::SendMessage(ClientMessage::EventRequest(EventRequest::Clue {
-                    word: clue_input.word.clone(),
-                    count: count,
-                }))
+            clue_input.count.map_or(vec![], |count| {
+                vec![
+                    GameMsg::SendMessage(ClientMessage::EventRequest(EventRequest::Clue {
+                        word: clue_input.word.clone(),
+                        count,
+                    })),
+                    GameMsg::SetClueInput(ClueInput {
+                        word: "".to_string(),
+                        count: None,
+                    }),
+                ]
             })
         });
         let clue_count = self.clue_input.count.clone();
@@ -227,10 +233,10 @@ impl Game {
                             </tbody>
                         </table>
                     }
-                    if view.next_action == Action::Guess &&
+                    if view.next_action == Action::Clue &&
                         match view.team_turn {
-                            TeamColour::Red => view.this_player.group == Group::RedGuessers,
-                            TeamColour::Blue => view.this_player.group == Group::BlueGuessers,
+                            TeamColour::Red => view.this_player.group == Group::RedSpyMasters,
+                            TeamColour::Blue => view.this_player.group == Group::BlueSpyMasters,
                         }
                     {
                         <label>{"word"}
@@ -240,7 +246,7 @@ impl Game {
                             <input type={"number"} oninput={set_clue_count} min={"1"} max={"9"} value={self.clue_input.count.map(|count| count.to_string())}/>
                         </label>
                         if let Some(clue_count) = self.clue_input.count {
-                            if self.clue_input.word.trim().len() > 0 && clue_count > 0 {
+                            if self.clue_input.word.trim().len() > 0 && clue_count >= 1 && clue_count <= 9 {
                                 <button onclick={provide_clue}>{"submit clue"}</button>
                             }
                         }
@@ -288,7 +294,10 @@ impl Component for Game {
         Self {
             websocket: None,
             view: None,
-            clue_input: ClueInput { word: "".to_string(), count: None },
+            clue_input: ClueInput {
+                word: "".to_string(),
+                count: None,
+            },
         }
     }
 
